@@ -5,7 +5,7 @@ import try_vs_either.EitherExample.ServiceUnavailable
 import scala.util.{Random, Failure, Success, Try}
 import scalaz.\/
 
-case class WList(title: String)
+case class TaskList(title: String)
 case class User(id: Long)
 
 /**
@@ -18,10 +18,21 @@ case class User(id: Long)
  *
  */
 
+import EitherExample.MyError
+
+trait EitherTodoService {
+  def authenticate(userId: String, secret: String): \/[MyError, User]
+  def fetchLists(user: User): \/[MyError, Seq[TaskList]]
+}
+trait TryTodoService {
+  def authenticate(userId: String, secret: String): Try[User]
+  def listsForUser(userId: String, secret: String): Try[Seq[TaskList]]
+}
+
 object EitherExample {
   import scalaz._
 
-  sealed class MyError
+  sealed trait MyError
   case class UnknownUser(userId: Long) extends MyError {
     override def toString = s"User with id [$userId] is unknown."
   }
@@ -37,25 +48,25 @@ object EitherExample {
     case u @ 1000 => \/ left WrongSecret(u)
     case u        => \/ right User(u)
   }
-  def fetchLists(user: User): \/[MyError, Seq[WList]] = {
+  def fetchLists(user: User): \/[MyError, Seq[TaskList]] = {
     if(Random.nextInt(100) <= 80){
-      \/.right(Seq(WList("Inbox"), WList("Private"), WList("Work")))
+      \/.right(Seq(TaskList("Inbox"), TaskList("Private"), TaskList("Work")))
     } else {
       \/.left(ServiceUnavailable("ListService"))
     }
   }
-
-  def listsForUser(userId: String, secret: String): \/[MyError, Seq[WList]] = {
-    val listsForUser: \/[MyError, Seq[WList]] = for {
-      user  <- authenticate(userId, secret)
-      lists <- fetchLists(user)
+  val service: EitherTodoService = ???
+  def listsForUser(userId: String, secret: String): \/[MyError, Seq[TaskList]] = {
+    val listsForUser: \/[MyError, Seq[TaskList]] = for {
+      user  <- service.authenticate(userId, secret)
+      lists <- service.fetchLists(user)
     } yield lists
 
     listsForUser match {
       case lists @ \/-(_) =>
         lists
       case -\/(_ : ServiceUnavailable) =>
-        \/.right(Seq.empty[WList])
+        \/.right(Seq.empty[TaskList])
       case error @ -\/(_) =>
         error
     }
@@ -77,22 +88,22 @@ object TryExample {
   }
 
   @throws[ServiceUnavailableException]("if the service is not available")
-  def fetchLists(user: User): Try[Seq[WList]] = Try {
+  def fetchLists(user: User): Try[Seq[TaskList]] = Try {
     if(Random.nextInt(100) <= 80){
-      Seq(WList("Inbox"), WList("Private"), WList("Work"))
+      Seq(TaskList("Inbox"), TaskList("Private"), TaskList("Work"))
     } else {
       throw new ServiceUnavailableException("ListService")
     }
   }
 
-  def listsForUser(userId: String, secret: String): Try[Seq[WList]] = {
-    val listsForUser: Try[Seq[WList]] = for {
+  def listsForUser(userId: String, secret: String): Try[Seq[TaskList]] = {
+    val listsForUser: Try[Seq[TaskList]] = for {
       user  <- authenticate(userId, secret)
       lists <- fetchLists(user)
     } yield lists
 
     listsForUser.recover {
-      case e: ServiceUnavailableException => Seq.empty[WList]
+      case e: ServiceUnavailableException => Seq.empty[TaskList]
     }
   }
 }
