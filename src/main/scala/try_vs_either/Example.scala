@@ -1,6 +1,9 @@
 package try_vs_either
 
+import try_vs_either.EitherExample.ServiceUnavailable
+
 import scala.util.{Random, Failure, Success, Try}
+import scalaz.\/
 
 case class WList(title: String)
 case class User(id: Long)
@@ -31,7 +34,7 @@ object EitherExample {
 
   def authenticate(userId: String, secret: String): \/[MyError, User] = userId.toLong match {
     case u @ 999  => \/ left UnknownUser(u)
-    case u @ 1000 => \/ left UnknownUser(u)
+    case u @ 1000 => \/ left WrongSecret(u)
     case u        => \/ right User(u)
   }
   def fetchLists(user: User): \/[MyError, Seq[WList]] = {
@@ -60,29 +63,36 @@ object EitherExample {
 }
 
 object TryExample {
-  sealed class MyException(msg: String, e: Exception) extends Exception(msg, e)
-  case class NumberFormatException(msg: String, e: Exception) extends MyException(msg, e)
-  case class ServiceUnavailableException(msg: String) extends MyException(msg, null)
+  sealed class MyException(msg: String) extends Exception(msg, null)
+  case class UnknownUserException(userId: Long) extends MyException(s"User with id [$userId] is unknown.")
+  case class WrongSecretException(userId: Long) extends MyException(s"User with id [$userId] provided the wrong secret.")
+  case class ServiceUnavailableException(service: String) extends MyException(s"The Service [$service] is currently unavailable")
 
-  // könnte NumberFormatException werfen
-  def authenticate(userId: Long, secret: String): Try[User] = ???
-  // eventuell eine ServiceUnavailableException
-  def fetchLists(user: User): Try[Seq[WList]] = ???
-
-  val listsForUser: Try[Seq[WList]] = for {
-    user  <- authenticate(123, "my-secret")
-    lists <- fetchLists(user)
-  } yield lists
-
-  listsForUser match {
-    case Success(lists) =>
-      println(s"Success! We got the following lists: $lists")
-    case Failure(exception) =>
-      println(s"Failure! We got the following exception: $exception")
+  def authenticate(userId: String, secret: String): Try[User] = Try {
+    userId.toLong match {
+      case u @ 999  => throw new UnknownUserException(u)
+      case u @ 1000 => throw new WrongSecretException(u)
+      case u        => User(u)
+    }
   }
-  // handle error
-  listsForUser.recover {
-    case e: NumberFormatException =>
-    case e: ServiceUnavailableException =>
+
+  @throws[ServiceUnavailableException]("if the service is not available")
+  def fetchLists(user: User): Try[Seq[WList]] = Try {
+    if(Random.nextInt(100) <= 80){
+      Seq(WList("Inbox"), WList("Private"), WList("Work"))
+    } else {
+      throw new ServiceUnavailableException("ListService")
+    }
+  }
+
+  def listsForUser(userId: String, secret: String): Try[Seq[WList]] = {
+    val listsForUser: Try[Seq[WList]] = for {
+      user  <- authenticate(userId, secret)
+      lists <- fetchLists(user)
+    } yield lists
+
+    listsForUser.recover {
+      case e: ServiceUnavailableException => Seq.empty[WList]
+    }
   }
 }
