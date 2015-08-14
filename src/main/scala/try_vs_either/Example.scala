@@ -1,12 +1,14 @@
 package try_vs_either
 
-import try_vs_either.EitherExample.ServiceUnavailable
+import try_vs_either.EitherExample.{WrongSecret, UnknownUser, ServiceUnavailable}
 
 import scala.util.{Random, Failure, Success, Try}
 import scalaz.\/
 
-case class TaskList(title: String)
+case class Page(title: String, content: String)
 case class User(id: Long)
+
+object DefaultHomePage extends Page("Welcome!", "This is your amazing Homepage!")
 
 /**
  * Ideen:
@@ -20,14 +22,15 @@ case class User(id: Long)
 
 import EitherExample.MyError
 
-trait EitherTodoService {
+trait EitherService {
   def authenticate(userId: String, secret: String): \/[MyError, User]
-  def fetchLists(user: User): \/[MyError, Seq[TaskList]]
+  def fetchHomePage(user: User): \/[MyError, Page]
 }
-trait TryTodoService {
+trait TryService {
   def authenticate(userId: String, secret: String): Try[User]
-  def listsForUser(userId: String, secret: String): Try[Seq[TaskList]]
+  def fetchHomePage(user: User): Try[Page]
 }
+
 
 object EitherExample {
   import scalaz._
@@ -43,30 +46,34 @@ object EitherExample {
     override def toString = s"The Service [$service] is currently unavailable"
   }
 
-  def authenticate(userId: String, secret: String): \/[MyError, User] = userId.toLong match {
-    case u @ 999  => \/ left UnknownUser(u)
-    case u @ 1000 => \/ left WrongSecret(u)
-    case u        => \/ right User(u)
-  }
-  def fetchLists(user: User): \/[MyError, Seq[TaskList]] = {
-    if(Random.nextInt(100) <= 80){
-      \/.right(Seq(TaskList("Inbox"), TaskList("Private"), TaskList("Work")))
-    } else {
-      \/.left(ServiceUnavailable("ListService"))
+  object EitherService extends EitherService {
+    def authenticate(userId: String, secret: String): \/[MyError, User] = userId.toLong match {
+      case u @ 999  => \/ left UnknownUser(u)
+      case u @ 1000 => \/ left WrongSecret(u)
+      case u        => \/ right User(u)
+    }
+    def fetchHomePage(user: User): \/[MyError, Page] = {
+      if(Random.nextInt(100) <= 80){
+        \/.right(Page("Your Homepage", "Welcome to your Homepage!"))
+      } else {
+        \/.left(ServiceUnavailable("HomePageService"))
+      }
     }
   }
-  val service: EitherTodoService = ???
-  def listsForUser(userId: String, secret: String): \/[MyError, Seq[TaskList]] = {
-    val listsForUser: \/[MyError, Seq[TaskList]] = for {
-      user  <- service.authenticate(userId, secret)
-      lists <- service.fetchLists(user)
-    } yield lists
 
-    listsForUser match {
-      case lists @ \/-(_) =>
-        lists
+
+  val service: EitherService = EitherService
+  def homePageForUser(userId: String, secret: String): \/[MyError, Page] = {
+    val homepage: \/[MyError, Page] = for {
+      user     <- service.authenticate(userId, secret)
+      homePage <- service.fetchHomePage(user)
+    } yield homePage
+
+    homepage match {
+      case \/-(_) =>
+        homepage
       case -\/(_ : ServiceUnavailable) =>
-        \/.right(Seq.empty[TaskList])
+        \/.right(DefaultHomePage)
       case error @ -\/(_) =>
         error
     }
@@ -79,31 +86,35 @@ object TryExample {
   case class WrongSecretException(userId: Long) extends MyException(s"User with id [$userId] provided the wrong secret.")
   case class ServiceUnavailableException(service: String) extends MyException(s"The Service [$service] is currently unavailable")
 
-  def authenticate(userId: String, secret: String): Try[User] = Try {
-    userId.toLong match {
-      case u @ 999  => throw new UnknownUserException(u)
-      case u @ 1000 => throw new WrongSecretException(u)
-      case u        => User(u)
+  object TryService extends TryService {
+    def authenticate(userId: String, secret: String): Try[User] = Try {
+      userId.toLong match {
+        case u @ 999  => throw new UnknownUserException(u)
+        case u @ 1000 => throw new WrongSecretException(u)
+        case u        => User(u)
+      }
+    }
+
+    @throws[ServiceUnavailableException]("if the service is not available")
+    def fetchHomePage(user: User): Try[Page] = Try {
+      if(Random.nextInt(100) <= 80){
+        Page("Your Homepage", "Welcome to your Homepage!")
+      } else {
+        throw new ServiceUnavailableException("HomePageService")
+      }
     }
   }
 
-  @throws[ServiceUnavailableException]("if the service is not available")
-  def fetchLists(user: User): Try[Seq[TaskList]] = Try {
-    if(Random.nextInt(100) <= 80){
-      Seq(TaskList("Inbox"), TaskList("Private"), TaskList("Work"))
-    } else {
-      throw new ServiceUnavailableException("ListService")
-    }
-  }
+  val service: TryService = TryService
 
-  def listsForUser(userId: String, secret: String): Try[Seq[TaskList]] = {
-    val listsForUser: Try[Seq[TaskList]] = for {
-      user  <- authenticate(userId, secret)
-      lists <- fetchLists(user)
-    } yield lists
+  def listsForUser(userId: String, secret: String): Try[Page] = {
+    val homePageForUser: Try[Page] = for {
+      user     <- service.authenticate(userId, secret)
+      homePage <- service.fetchHomePage(user)
+    } yield homePage
 
-    listsForUser.recover {
-      case e: ServiceUnavailableException => Seq.empty[TaskList]
+    homePageForUser.recover {
+      case e: ServiceUnavailableException => DefaultHomePage
     }
   }
 }
