@@ -5,35 +5,18 @@ import try_vs_either.EitherExample.{WrongSecret, UnknownUser, ServiceUnavailable
 import scala.util.{Random, Failure, Success, Try}
 import scalaz.\/
 
-case class Page(title: String, content: String)
+// the domain model for our tiny CMS
+case class Homepage(title: String, content: String)
 case class User(id: Long)
-
-object DefaultHomePage extends Page("Welcome!", "This is your amazing Homepage!")
-
-/**
- * Ideen:
- * Erst Either zeigen. Alles toll. Dann Try.
- *
- * - Try is doch nützlich weil userId ein String ist und eine NumberFormatException wirft.
- * - Either bieter kein recover? Kein teilweises recover von einigen Fehlern möglich.
- *
- *
- */
-
-import EitherExample.MyError
-
-trait EitherService {
-  def authenticate(userId: String, secret: String): \/[MyError, User]
-  def fetchHomePage(user: User): \/[MyError, Page]
-}
-trait TryService {
-  def authenticate(userId: String, secret: String): Try[User]
-  def fetchHomePage(user: User): Try[Page]
-}
+object DefaultHomePage extends Homepage("Welcome!", "This is your amazing Homepage!")
 
 
 object EitherExample {
   import scalaz._
+  trait EitherService {
+    def authenticate(userId: String, secret: String): \/[MyError, User]
+    def fetchHomePage(user: User): \/[MyError, Homepage]
+  }
 
   sealed trait MyError
   case class UnknownUser(userId: Long) extends MyError {
@@ -52,9 +35,9 @@ object EitherExample {
       case u @ 1000 => \/ left WrongSecret(u)
       case u        => \/ right User(u)
     }
-    def fetchHomePage(user: User): \/[MyError, Page] = {
+    def fetchHomePage(user: User): \/[MyError, Homepage] = {
       if(Random.nextInt(100) <= 80){
-        \/.right(Page("Your Homepage", "Welcome to your Homepage!"))
+        \/.right(Homepage("Your Homepage", "Welcome to your Homepage!"))
       } else {
         \/.left(ServiceUnavailable("HomePageService"))
       }
@@ -63,8 +46,8 @@ object EitherExample {
 
 
   val service: EitherService = EitherService
-  def homePageForUser(userId: String, secret: String): \/[MyError, Page] = {
-    val homepage: \/[MyError, Page] = for {
+  def homePageForUser(userId: String, secret: String): \/[MyError, Homepage] = {
+    val homepage: \/[MyError, Homepage] = for {
       user     <- service.authenticate(userId, secret)
       homePage <- service.fetchHomePage(user)
     } yield homePage
@@ -81,6 +64,11 @@ object EitherExample {
 }
 
 object TryExample {
+  trait TryService {
+    def authenticate(userId: String, secret: String): Try[User]
+    def fetchHomePage(user: User): Try[Homepage]
+  }
+
   sealed class MyException(msg: String) extends Exception(msg, null)
   case class UnknownUserException(userId: Long) extends MyException(s"User with id [$userId] is unknown.")
   case class WrongSecretException(userId: Long) extends MyException(s"User with id [$userId] provided the wrong secret.")
@@ -96,9 +84,9 @@ object TryExample {
     }
 
     @throws[ServiceUnavailableException]("if the service is not available")
-    def fetchHomePage(user: User): Try[Page] = Try {
+    def fetchHomePage(user: User): Try[Homepage] = Try {
       if(Random.nextInt(100) <= 80){
-        Page("Your Homepage", "Welcome to your Homepage!")
+        Homepage("Your Homepage", "Welcome to your Homepage!")
       } else {
         throw new ServiceUnavailableException("HomePageService")
       }
@@ -107,8 +95,8 @@ object TryExample {
 
   val service: TryService = TryService
 
-  def listsForUser(userId: String, secret: String): Try[Page] = {
-    val homePageForUser: Try[Page] = for {
+  def homePageForUser(userId: String, secret: String): Try[Homepage] = {
+    val homePageForUser: Try[Homepage] = for {
       user     <- service.authenticate(userId, secret)
       homePage <- service.fetchHomePage(user)
     } yield homePage
